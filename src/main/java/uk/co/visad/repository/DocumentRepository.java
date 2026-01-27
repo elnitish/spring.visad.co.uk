@@ -8,4 +8,5 @@ import java.util.List;
 @Repository
 public interface DocumentRepository extends JpaRepository<Document, Long> {
     List<Document> findByRecordIdAndRecordType(Long recordId, String recordType);
+    List<Document> findByRecordIdAndRecordTypeAndCategory(Long recordId, String recordType, String category);
 }

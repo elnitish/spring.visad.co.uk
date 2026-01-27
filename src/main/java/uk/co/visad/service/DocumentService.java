@@ -31,6 +31,11 @@ public class DocumentService {
         return documentRepository.findByRecordIdAndRecordType(recordId, recordType);
     }
 
+    @Transactional(readOnly = true)
+    public List<Document> getDocumentsByCategory(Long recordId, String recordType, String category) {
+        return documentRepository.findByRecordIdAndRecordTypeAndCategory(recordId, recordType, category);
+    }
+
     @Transactional
     public Document upload(MultipartFile file, Long recordId, String recordType, String category) throws IOException {
         if (file.isEmpty()) {
