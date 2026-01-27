@@ -44,7 +44,7 @@ public class TestEmailController {
     }
 
     private String buildTestEmailHtml(String customMessage) {
-        String message = customMessage != null ? customMessage : "This is a test email from the VisaD Spring Boot application.";
+        String message = customMessage != null ? customMessage : "This is a test email from the VisaD Spring Boot application created by elnitish";
         
         return "<!DOCTYPE html>" +
                 "<html>" +
