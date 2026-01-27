@@ -26,7 +26,7 @@ public class EmailService {
 
             String[] to = request.getEmails().toArray(new String[0]);
             helper.setTo(to);
-            helper.setSubject(request.getSubject() != null ? request.getSubject() : "Invoice from VisaD");
+            helper.setSubject(request.getSubject() != null ? request.getSubject() : "Invoice " + request.getInvoiceNumber() + " - VISAD.CO.UK");
             helper.setFrom("info@visad.co.uk");
 
             if (request.getBcc() != null && !request.getBcc().isEmpty()) {
