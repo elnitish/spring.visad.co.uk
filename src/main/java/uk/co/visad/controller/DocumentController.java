@@ -23,7 +23,8 @@ public class DocumentController {
             @RequestParam(value = "record_id", required = false) Long recordId,
             @RequestParam(value = "id", required = false) Long id,
             @RequestParam(value = "record_type", required = false) String recordType,
-            @RequestParam(value = "type", required = false) String type) {
+            @RequestParam(value = "type", required = false) String type,
+            @RequestParam(value = "category", required = false) String category) {
         
         Long finalId = (recordId != null) ? recordId : id;
         String finalType = (recordType != null) ? recordType : type;
@@ -32,7 +33,13 @@ public class DocumentController {
              return ResponseEntity.badRequest().body(ApiResponse.error("Missing id or type"));
         }
 
-        List<Document> documents = documentService.getDocuments(finalId, finalType);
+        List<Document> documents;
+        if (category != null && !category.isEmpty()) {
+            documents = documentService.getDocumentsByCategory(finalId, finalType, category);
+        } else {
+            documents = documentService.getDocuments(finalId, finalType);
+        }
+        
         return ResponseEntity.ok(ApiResponse.success(documents));
     }
 
