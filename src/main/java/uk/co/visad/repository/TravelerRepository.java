@@ -55,7 +55,6 @@ public interface TravelerRepository extends JpaRepository<Traveler, Long> {
        long countByStatus(String status);
 
        // Optimized full fetch with EntityGraph
-       @EntityGraph(attributePaths = { "dependents" })
        @Query("SELECT t FROM Traveler t ORDER BY t.id DESC")
        Page<Traveler> findAllWithRelations(Pageable pageable);
 

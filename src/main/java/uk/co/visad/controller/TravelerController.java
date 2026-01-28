@@ -31,12 +31,46 @@ public class TravelerController {
      * Get all travelers with pagination
      * PHP equivalent: travelers.php?action=read_all
      */
-    @GetMapping("")
-    public ResponseEntity<ApiResponse<List<TravelerDto>>> readAllTravelers(
-            @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "50") int limit,
-            @RequestParam(defaultValue = "false") boolean summary) {
-        return ResponseEntity.ok(travelerService.getAllTravelers(page, limit, summary));
+    @Transactional(readOnly = true)
+    public ApiResponse<List<TravelerDto>> getAllTravelers(int page, int limit, boolean summary) {
+        Pageable pageable = PageRequest.of(page - 1, limit); // 0-indexed
+
+        // 1. Fetch paginated Travelers (SQL-level pagination)
+        Page<Traveler> travelerPage = travelerRepository.findAllWithRelations(pageable); // Standard pagination
+
+        List<Traveler> travelers = travelerPage.getContent();
+
+        // 2. Fetch all dependents for these travelers in one batch query
+        // Map<TravelerId, List<Dependent>>
+        Map<Long, List<Dependent>> dependentsMap = new HashMap<>();
+
+        if (!travelers.isEmpty()) {
+            List<Long> travelerIds = travelers.stream()
+                    .map(Traveler::getId)
+                    .collect(Collectors.toList());
+
+            dependentsMap = dependentRepository.findAllByTraveler_IdIn(travelerIds)
+                    .stream()
+                    .collect(Collectors.groupingBy(d -> d.getTraveler().getId()));
+        }
+
+        final Map<Long, List<Dependent>> finalDependentsMap = dependentsMap;
+
+        // 3. Map to DTOs using the fetched dependents
+        return ApiResponse.<List<TravelerDto>>builder()
+                .status("success")
+                .data(travelers.stream().map(t -> {
+                    // Get dependents for this traveler from the map
+                    List<Dependent> myDependents = finalDependentsMap.getOrDefault(t.getId(),
+                            new java.util.ArrayList<>());
+                    // Pass explicit dependents to mapper to avoid lazy loading the collection
+                    return mapToDto(t, myDependents, null);
+                }).collect(Collectors.toList()))
+                .meta(Map.of(
+                        "total_pages", travelerPage.getTotalPages(),
+                        "current_page", page,
+                        "total_items", travelerPage.getTotalElements()))
+                .build();
     }
 
     /**

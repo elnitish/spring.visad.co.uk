@@ -34,6 +34,7 @@ public class VisaUrlService {
     private static final Set<String> ALLOWED_EXTENSIONS = Set.of("pdf", "doc", "docx");
 
     @Transactional(readOnly = true)
+    @org.springframework.cache.annotation.Cacheable("visa_urls")
     public List<VisaUrlDto> getAllUrls() {
         return visaUrlRepository.findAllByOrderByCountryAscVisaCenterAsc()
                 .stream()
@@ -42,6 +43,7 @@ public class VisaUrlService {
     }
 
     @Transactional
+    @org.springframework.cache.annotation.CacheEvict(value = "visa_urls", allEntries = true)
     public void createUrl(VisaUrlDto.CreateRequest request, MultipartFile file) throws IOException {
         if (request.getCountry() == null || request.getCountry().isEmpty()) {
             throw new BadRequestException("Country is required");
@@ -71,6 +73,7 @@ public class VisaUrlService {
     }
 
     @Transactional
+    @org.springframework.cache.annotation.CacheEvict(value = "visa_urls", allEntries = true)
     public void updateUrl(VisaUrlDto.UpdateRequest request, MultipartFile file) throws IOException {
         VisaUrl visaUrl = visaUrlRepository.findById(request.getId())
                 .orElseThrow(() -> new ResourceNotFoundException("URL not found"));
@@ -119,6 +122,7 @@ public class VisaUrlService {
     }
 
     @Transactional
+    @org.springframework.cache.annotation.CacheEvict(value = "visa_urls", allEntries = true)
     public void deleteUrl(Long id) {
         VisaUrl visaUrl = visaUrlRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("URL not found"));
@@ -157,7 +161,8 @@ public class VisaUrlService {
     }
 
     private String getFileExtension(String filename) {
-        if (filename == null) return "";
+        if (filename == null)
+            return "";
         int lastDot = filename.lastIndexOf('.');
         return lastDot > 0 ? filename.substring(lastDot + 1) : "";
     }
