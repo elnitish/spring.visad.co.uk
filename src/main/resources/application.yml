@@ -88,7 +88,7 @@ app:
 # Logging Configuration
 logging:
   level:
-    root: INFO
+    root: DEBUG
     uk.co.visad: INFO
     org.springframework.security: DEBUG
     org.springframework.web: DEBUG

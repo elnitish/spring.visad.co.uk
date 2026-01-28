@@ -31,10 +31,6 @@ public class TravelerController {
      * Get all travelers with pagination
      * PHP equivalent: travelers.php?action=read_all
      */
-    /**
-     * Get all travelers with pagination
-     * PHP equivalent: travelers.php?action=read_all
-     */
     @GetMapping("")
     public ResponseEntity<ApiResponse<List<TravelerDto>>> readAllTravelers(
             @RequestParam(defaultValue = "1") int page,
