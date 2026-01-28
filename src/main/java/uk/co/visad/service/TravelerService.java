@@ -174,17 +174,17 @@ public class TravelerService {
         // 3. Batch fetch Dependent Questions (Optimization)
         Map<Long, TravelerQuestions> dependentQuestionsMap = new HashMap<>();
         if (!dependentsMap.isEmpty()) {
-             List<Long> allDependentIds = dependentsMap.values().stream()
-                     .flatMap(List::stream)
-                     .map(Dependent::getId)
-                     .collect(Collectors.toList());
-             
-             if (!allDependentIds.isEmpty()) {
-                 dependentQuestionsMap = travelerQuestionsRepository
-                         .findAllByRecordIdInAndRecordType(allDependentIds, "dependent")
-                         .stream()
-                         .collect(Collectors.toMap(TravelerQuestions::getRecordId, tq -> tq));
-             }
+            List<Long> allDependentIds = dependentsMap.values().stream()
+                    .flatMap(List::stream)
+                    .map(Dependent::getId)
+                    .collect(Collectors.toList());
+
+            if (!allDependentIds.isEmpty()) {
+                dependentQuestionsMap = travelerQuestionsRepository
+                        .findAllByRecordIdInAndRecordType(allDependentIds, "dependent")
+                        .stream()
+                        .collect(Collectors.toMap(TravelerQuestions::getRecordId, tq -> tq));
+            }
         }
 
         // 4. Map to DTO
@@ -193,7 +193,8 @@ public class TravelerService {
         final Map<Long, TravelerQuestions> finalDependentQuestionsMap = dependentQuestionsMap;
 
         List<TravelerDto> dtos = travelerPage.getContent().stream()
-                .map(t -> mapToDtoOptimized(t, finalDependentsMap.get(t.getId()), finalQuestionsMap.get(t.getId()), finalDependentQuestionsMap))
+                .map(t -> mapToDtoOptimized(t, finalDependentsMap.get(t.getId()), finalQuestionsMap.get(t.getId()),
+                        finalDependentQuestionsMap))
                 .collect(Collectors.toList());
 
         ApiResponse.PaginationInfo pagination = ApiResponse.PaginationInfo.builder()
@@ -245,7 +246,7 @@ public class TravelerService {
     public TravelerDto getTravelerById(Long id) {
         Traveler traveler = travelerRepository.findByIdWithDependents(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Traveler not found"));
-        
+
         TravelerQuestions questions = travelerQuestionsRepository
                 .findByRecordIdAndRecordType(id, "traveler")
                 .orElse(null);
@@ -493,6 +494,100 @@ public class TravelerService {
                 .build();
     }
 
+    /**
+     * Save invoices for all travelers that don't have saved invoices yet
+     * PHP equivalent: travelers.php?action=save_all_invoices
+     */
+    @Transactional
+    public Map<String, Object> saveAllInvoices() {
+        // Find all travelers without saved invoices
+        List<Traveler> travelersWithoutInvoices = travelerRepository.findAll().stream()
+                .filter(t -> !Boolean.TRUE.equals(t.getInvoiceGenerated()))
+                .collect(Collectors.toList());
+
+        int savedCount = 0;
+        LocalDateTime now = LocalDateTime.now();
+
+        for (Traveler traveler : travelersWithoutInvoices) {
+            try {
+                // Get dependents for this traveler
+                List<Dependent> dependents = dependentRepository.findByTraveler_Id(traveler.getId());
+
+                // Calculate invoice data
+                BigDecimal subtotal = BigDecimal.ZERO;
+                List<Map<String, Object>> items = new ArrayList<>();
+
+                // Add main traveler
+                BigDecimal mainPrice = traveler.getPrice() != null ? traveler.getPrice() : BigDecimal.ZERO;
+                subtotal = subtotal.add(mainPrice);
+                items.add(Map.of(
+                        "type", "main",
+                        "id", traveler.getId(),
+                        "name", (traveler.getFirstName() != null ? traveler.getFirstName() : "") + " " +
+                                (traveler.getLastName() != null ? traveler.getLastName() : ""),
+                        "service", traveler.getPackage_() != null ? traveler.getPackage_() : "Full Support",
+                        "price", mainPrice));
+
+                // Add dependents
+                for (Dependent dep : dependents) {
+                    BigDecimal depPrice = dep.getPrice() != null ? dep.getPrice() : BigDecimal.ZERO;
+                    subtotal = subtotal.add(depPrice);
+                    items.add(Map.of(
+                            "type", "co-traveler",
+                            "id", dep.getId(),
+                            "name", (dep.getFirstName() != null ? dep.getFirstName() : "") + " " +
+                                    (dep.getLastName() != null ? dep.getLastName() : ""),
+                            "service", dep.getPackageType() != null ? dep.getPackageType() : "Full Support",
+                            "price", depPrice));
+                }
+
+                // Calculate discount
+                BigDecimal discountAmount = BigDecimal.ZERO;
+                String discountType = traveler.getDiscountType() != null ? traveler.getDiscountType() : "none";
+                BigDecimal discountValue = traveler.getDiscountValue() != null ? traveler.getDiscountValue()
+                        : BigDecimal.ZERO;
+
+                if ("percentage".equals(discountType) && discountValue.compareTo(BigDecimal.ZERO) > 0) {
+                    discountAmount = subtotal.multiply(discountValue).divide(BigDecimal.valueOf(100), 2,
+                            BigDecimal.ROUND_HALF_UP);
+                } else if ("fixed".equals(discountType)) {
+                    discountAmount = discountValue;
+                }
+
+                BigDecimal total = subtotal.subtract(discountAmount);
+
+                // Convert items to JSON
+                String itemsJson;
+                try {
+                    itemsJson = objectMapper.writeValueAsString(items);
+                } catch (Exception e) {
+                    log.error("Failed to serialize invoice items for traveler {}", traveler.getId(), e);
+                    continue;
+                }
+
+                // Save invoice data
+                traveler.setInvoiceSubtotal(subtotal);
+                traveler.setInvoiceDiscountType(discountType);
+                traveler.setInvoiceDiscountValue(discountValue);
+                traveler.setInvoiceDiscountAmount(discountAmount);
+                traveler.setInvoiceTotal(total);
+                traveler.setInvoiceItemsJson(itemsJson);
+                traveler.setInvoiceGenerated(true);
+                traveler.setInvoiceGeneratedAt(now);
+
+                travelerRepository.save(traveler);
+                savedCount++;
+
+            } catch (Exception e) {
+                log.error("Failed to save invoice for traveler {}", traveler.getId(), e);
+            }
+        }
+
+        return Map.of(
+                "saved_count", savedCount,
+                "message", "Saved " + savedCount + " invoices successfully");
+    }
+
     // Helper methods
     private void updateVisaLink(Traveler traveler) {
         String country = traveler.getTravelCountry();
@@ -560,7 +655,8 @@ public class TravelerService {
     }
 
     private TravelerDto mapToDto(Traveler t, List<Dependent> dependents, TravelerQuestions questions) {
-        // For single traveler fetch, we can lazy load dependent questions or fetch them if needed.
+        // For single traveler fetch, we can lazy load dependent questions or fetch them
+        // if needed.
         // But mapToDtoOptimized now expects a Map.
         Map<Long, TravelerQuestions> depQuestionsMap = new HashMap<>();
         if (dependents != null && !dependents.isEmpty()) {
@@ -575,7 +671,8 @@ public class TravelerService {
         return mapToDtoOptimized(t, dependents, questions, depQuestionsMap);
     }
 
-    private TravelerDto mapToDtoOptimized(Traveler t, List<Dependent> dependents, TravelerQuestions questions, Map<Long, TravelerQuestions> dependentQuestionsMap) {
+    private TravelerDto mapToDtoOptimized(Traveler t, List<Dependent> dependents, TravelerQuestions questions,
+            Map<Long, TravelerQuestions> dependentQuestionsMap) {
         DateTimeFormatter displayFormat = DateTimeFormatter.ofPattern("dd/MM/yy HH:mm");
 
         TravelerDto.InvoiceDto savedInvoice = null;
@@ -597,7 +694,8 @@ public class TravelerService {
         List<DependentDto> depDtos = null;
         if (dependents != null) {
             depDtos = dependents.stream()
-                    .map(d -> mapDependentToDto(d, dependentQuestionsMap != null ? dependentQuestionsMap.get(d.getId()) : null))
+                    .map(d -> mapDependentToDto(d,
+                            dependentQuestionsMap != null ? dependentQuestionsMap.get(d.getId()) : null))
                     .collect(Collectors.toList());
         }
 
@@ -748,8 +846,6 @@ public class TravelerService {
         // Check if details are verified based on notes
         boolean detailsVerified = t.getNotes() != null && t.getNotes().contains("VERIFIED");
 
-
-
         return TravelerDto.builder().id(t.getId()).name(t.getName()).firstName(t.getFirstName())
                 .lastName(t.getLastName()).detailsVerified(detailsVerified).title(t.getTitle()).gender(t.getGender())
                 .dob(t.getDob()).placeOfBirth(t.getPlaceOfBirth()).countryOfBirth(t.getCountryOfBirth())
@@ -792,7 +888,8 @@ public class TravelerService {
                 .invitingPersonZip(invitingPersonZip)
                 .hasBookings(hasBookings)
                 .evisaIssueDate(evisaIssueDate).evisaExpiryDate(evisaExpiryDate).evisaNoDateSettled(evisaNoDateSettled)
-                .evisaDocument(evisaDocument).schengenVisaImage(schengenVisaImage).evisaDocumentLinks(evisaLinks).shareCode(shareCode)
+                .evisaDocument(evisaDocument).schengenVisaImage(schengenVisaImage).evisaDocumentLinks(evisaLinks)
+                .shareCode(shareCode)
                 .shareCodeExpiryDate(shareCodeExpiryDate).shareCodeDocument(shareCodeDocument)
                 .shareCodeExpiryDate(shareCodeExpiryDate).shareCodeDocument(shareCodeDocument)
                 .shareCodeDocumentLinks(shareCodeLinks).bookingDocument(bookingDocument)
@@ -1005,10 +1102,11 @@ public class TravelerService {
     }
 
     @Transactional
-    public String uploadQuestionFile(Long id, String category, org.springframework.web.multipart.MultipartFile file) throws java.io.IOException {
+    public String uploadQuestionFile(Long id, String category, org.springframework.web.multipart.MultipartFile file)
+            throws java.io.IOException {
         // Map frontend category to entity field name
         String javaField = convertCategoryToJavaField(category);
-        
+
         // Get or create TravelerQuestions
         TravelerQuestions tq = travelerQuestionsRepository
                 .findByRecordIdAndRecordType(id, "traveler")
@@ -1019,12 +1117,13 @@ public class TravelerService {
                     return newTq;
                 });
 
-        // Create upload directory structure: uploads/documents/client_documents/YYYY/MM/
+        // Create upload directory structure:
+        // uploads/documents/client_documents/YYYY/MM/
         LocalDateTime now = LocalDateTime.now();
         String yearMonth = String.format("%d/%02d", now.getYear(), now.getMonthValue());
         String uploadDir = "uploads/documents/client_documents/" + yearMonth + "/";
         java.nio.file.Path uploadPath = java.nio.file.Paths.get(uploadDir);
-        
+
         if (!java.nio.file.Files.exists(uploadPath)) {
             java.nio.file.Files.createDirectories(uploadPath);
         }
@@ -1046,11 +1145,12 @@ public class TravelerService {
         // Get existing files array
         String currentValue = getQuestionFieldValue(tq, javaField);
         List<String> files = new ArrayList<>();
-        
+
         if (currentValue != null && !currentValue.isEmpty()) {
             try {
                 if (currentValue.trim().startsWith("[")) {
-                    files = objectMapper.readValue(currentValue, new TypeReference<List<String>>() {});
+                    files = objectMapper.readValue(currentValue, new TypeReference<List<String>>() {
+                    });
                 } else {
                     files.add(currentValue);
                 }
@@ -1080,7 +1180,7 @@ public class TravelerService {
         categoryMap.put("schengen_visa_image", "schengenVisaImage");
         categoryMap.put("passport_front", "passportFront");
         categoryMap.put("passport_back", "passportBack");
-        
+
         String javaField = categoryMap.get(category);
         if (javaField == null) {
             throw new BadRequestException("Unknown category: " + category);

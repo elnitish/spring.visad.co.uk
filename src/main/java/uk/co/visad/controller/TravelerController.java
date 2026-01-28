@@ -158,6 +158,16 @@ public class TravelerController {
         return ResponseEntity.ok(ApiResponse.success(invoice));
     }
 
+    /**
+     * Save all invoices
+     * PHP equivalent: travelers.php?action=save_all_invoices
+     */
+    @PostMapping("/save-all-invoices")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> saveAllInvoices() {
+        Map<String, Object> result = travelerService.saveAllInvoices();
+        return ResponseEntity.ok(ApiResponse.success(result, (String) result.get("message")));
+    }
+
     @PatchMapping("/{id}/questions")
     public ResponseEntity<ApiResponse<Void>> updateQuestionField(
             @PathVariable Long id,
@@ -184,12 +194,10 @@ public class TravelerController {
         try {
             String filePath = travelerService.uploadQuestionFile(id, category, file);
             return ResponseEntity.ok(ApiResponse.success(
-                Map.of("path", filePath, "message", "File uploaded successfully")
-            ));
+                    Map.of("path", filePath, "message", "File uploaded successfully")));
         } catch (java.io.IOException e) {
             return ResponseEntity.status(500).body(
-                ApiResponse.error("Failed to upload file: " + e.getMessage())
-            );
+                    ApiResponse.error("Failed to upload file: " + e.getMessage()));
         }
     }
 }

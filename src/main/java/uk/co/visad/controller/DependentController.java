@@ -95,13 +95,23 @@ public class DependentController {
      */
 
     /**
-     * Get all dependents for a traveler
-     * PHP equivalent: dependents.php?action=get_all_for_traveler
+     * Get all dependents for a traveler OR all dependents in the system
+     * PHP equivalent: dependents.php?action=get_all_for_traveler (with traveler_id)
+     * PHP equivalent: dependents.php?action=read_all (without traveler_id)
      */
     @GetMapping("")
     public ResponseEntity<ApiResponse<List<DependentDto>>> getAllForTraveler(
-            @RequestParam("traveler_id") Long travelerId) {
-        List<DependentDto> dependents = dependentService.getDependentsForTraveler(travelerId);
+            @RequestParam(value = "traveler_id", required = false) Long travelerId) {
+        List<DependentDto> dependents;
+
+        if (travelerId != null) {
+            // Get dependents for specific traveler
+            dependents = dependentService.getDependentsForTraveler(travelerId);
+        } else {
+            // Get all dependents across the system
+            dependents = dependentService.getAllDependents();
+        }
+
         return ResponseEntity.ok(ApiResponse.<List<DependentDto>>builder()
                 .status("success")
                 .data(dependents)

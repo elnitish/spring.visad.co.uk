@@ -24,6 +24,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -233,7 +234,7 @@ public class DependentService {
     @Transactional(readOnly = true)
     public List<DependentDto> getDependentsForTraveler(Long travelerId) {
         List<Dependent> dependents = dependentRepository.findByTraveler_Id(travelerId);
-        
+
         // Batch fetch questions to avoid N+1
         List<Long> depIds = dependents.stream().map(Dependent::getId).collect(Collectors.toList());
         Map<Long, TravelerQuestions> questionsMap = travelerQuestionsRepository
@@ -243,6 +244,30 @@ public class DependentService {
 
         return dependents.stream()
                 .map(d -> mapToDto(d, questionsMap.get(d.getId())))
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Get all dependents across the system
+     * PHP equivalent: dependents.php?action=read_all
+     */
+    @Transactional(readOnly = true)
+    public List<DependentDto> getAllDependents() {
+        List<Dependent> dependents = dependentRepository.findAll();
+
+        // Batch fetch questions to avoid N+1
+        List<Long> depIds = dependents.stream().map(Dependent::getId).collect(Collectors.toList());
+        Map<Long, TravelerQuestions> questionsMap = new HashMap<>();
+        if (!depIds.isEmpty()) {
+            questionsMap = travelerQuestionsRepository
+                    .findAllByRecordIdInAndRecordType(depIds, "dependent")
+                    .stream()
+                    .collect(Collectors.toMap(TravelerQuestions::getRecordId, tq -> tq));
+        }
+
+        final Map<Long, TravelerQuestions> finalQuestionsMap = questionsMap;
+        return dependents.stream()
+                .map(d -> mapToDto(d, finalQuestionsMap.get(d.getId())))
                 .collect(Collectors.toList());
     }
 
