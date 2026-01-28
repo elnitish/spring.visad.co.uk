@@ -125,7 +125,9 @@ public class TravelerService {
 
     @Transactional(readOnly = true)
     public ApiResponse<List<TravelerDto>> getAllTravelers(int page, int limit, boolean summary) {
-        Pageable pageable = PageRequest.of(page - 1, limit, Sort.by(Sort.Direction.DESC, "id"));
+        // Correct Sorting: createdAt DESC (primary), id DESC (tie-breaker)
+        Sort sort = Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id"));
+        Pageable pageable = PageRequest.of(page - 1, limit, sort);
 
         if (summary) {
             // Fast path: use projection
@@ -147,29 +149,38 @@ public class TravelerService {
             return ApiResponse.success(dtos, pagination);
         }
 
-        // Slow path: full entities with relations
-        Page<Traveler> travelerPage = travelerRepository.findAllWithRelations(pageable);
-        List<Long> travelerIds = travelerPage.getContent().stream()
+        // Full fetch: Two-Query Pattern (Critical Optimization)
+        // 1. Fetch paginated Travelers ONLY (No Joins)
+        Page<Traveler> travelerPage = travelerRepository.findAll(pageable);
+
+        List<Traveler> travelers = travelerPage.getContent();
+        List<Long> travelerIds = travelers.stream()
                 .map(Traveler::getId)
                 .collect(Collectors.toList());
 
-        // 1. Dependents are already fetched via EntityGraph
-        // 2. Batch fetch TravelerQuestions
+        // 2 & 3. Batch Fetch: Dependents and Questions
+        Map<Long, List<Dependent>> dependentsMap = new HashMap<>();
         Map<Long, TravelerQuestions> questionsMap = new HashMap<>();
+        Map<Long, TravelerQuestions> dependentQuestionsMap = new HashMap<>();
+
         if (!travelerIds.isEmpty()) {
+            // Fetch Dependents
+            dependentsMap = dependentRepository.findAllByTraveler_IdIn(travelerIds)
+                    .stream()
+                    .collect(Collectors.groupingBy(d -> d.getTraveler().getId()));
+
+            // Fetch Traveler Questions
             List<TravelerQuestions> allQuestions = travelerQuestionsRepository
                     .findAllByRecordIdInAndRecordType(travelerIds, "traveler");
             for (TravelerQuestions tq : allQuestions) {
                 questionsMap.put(tq.getRecordId(), tq);
             }
-        }
 
-        // 3. Batch fetch Dependent Questions (Optimization)
-        Map<Long, TravelerQuestions> dependentQuestionsMap = new HashMap<>();
-        if (!travelerPage.getContent().isEmpty()) {
-            // Extract all dependents from the already fetched travelers
-            List<Long> allDependentIds = travelerPage.getContent().stream()
-                    .flatMap(t -> t.getDependents().stream())
+            // Fetch Dependent Questions (for deep tree)
+            List<Dependent> allFetchedDependents = dependentsMap.values().stream()
+                    .flatMap(List::stream)
+                    .collect(Collectors.toList());
+            List<Long> allDependentIds = allFetchedDependents.stream()
                     .map(Dependent::getId)
                     .collect(Collectors.toList());
 
@@ -181,13 +192,16 @@ public class TravelerService {
             }
         }
 
-        // 4. Map to DTO
-        final Map<Long, TravelerQuestions> finalQuestionsMap = questionsMap;
+        final Map<Long, List<Dependent>> finalDependentsMap = dependentsMap;
         final Map<Long, TravelerQuestions> finalDependentQuestionsMap = dependentQuestionsMap;
 
-        List<TravelerDto> dtos = travelerPage.getContent().stream()
-                .map(t -> mapToDtoOptimized(t, t.getDependents(), finalQuestionsMap.get(t.getId()),
-                        finalDependentQuestionsMap))
+        // 4. In-Memory Stitching
+        List<TravelerDto> dtos = travelers.stream()
+                .map(t -> {
+                    List<Dependent> myDependents = finalDependentsMap.getOrDefault(t.getId(),
+                            new java.util.ArrayList<>());
+                    return mapToDtoOptimized(t, myDependents, questionsMap.get(t.getId()), finalDependentQuestionsMap);
+                })
                 .collect(Collectors.toList());
 
         ApiResponse.PaginationInfo pagination = ApiResponse.PaginationInfo.builder()
