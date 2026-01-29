@@ -61,6 +61,8 @@ public class TravelerService {
             "applicationFormPassword", "title", "placeOfBirth", "countryOfBirth", "relationshipToMain",
             "price", "discountType", "discountValue", "refundAmount");
 
+    private static final DateTimeFormatter DISPLAY_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yy HH:mm");
+
     // Fields that belong to the traveler_questions table
     private static final Set<String> QUESTIONS_FIELDS = Set.of(
             // Occupation
@@ -158,22 +160,28 @@ public class TravelerService {
                 .map(Traveler::getId)
                 .collect(Collectors.toList());
 
-        // 2 & 3. Batch Fetch: Dependents and Questions
+        // 2 & 3. Batch Fetch: Dependents and Questions (Partitioned)
         Map<Long, List<Dependent>> dependentsMap = new HashMap<>();
         Map<Long, TravelerQuestions> questionsMap = new HashMap<>();
         Map<Long, TravelerQuestions> dependentQuestionsMap = new HashMap<>();
 
         if (!travelerIds.isEmpty()) {
-            // Fetch Dependents
-            dependentsMap = dependentRepository.findAllByTraveler_IdIn(travelerIds)
-                    .stream()
-                    .collect(Collectors.groupingBy(d -> d.getTraveler().getId()));
+            final int batchSize = 500;
+            // Manual partitioning to avoid Guava dependency if not present
+            for (int i = 0; i < travelerIds.size(); i += batchSize) {
+                List<Long> batchIds = travelerIds.subList(i, Math.min(i + batchSize, travelerIds.size()));
 
-            // Fetch Traveler Questions
-            List<TravelerQuestions> allQuestions = travelerQuestionsRepository
-                    .findAllByRecordIdInAndRecordType(travelerIds, "traveler");
-            for (TravelerQuestions tq : allQuestions) {
-                questionsMap.put(tq.getRecordId(), tq);
+                // Fetch Dependents for batch
+                dependentRepository.findAllByTraveler_IdIn(batchIds)
+                        .forEach(d -> dependentsMap.computeIfAbsent(d.getTraveler().getId(), k -> new ArrayList<>())
+                                .add(d));
+
+                // Fetch Traveler Questions for batch
+                List<TravelerQuestions> batchQuestions = travelerQuestionsRepository
+                        .findAllByRecordIdInAndRecordType(batchIds, "traveler");
+                for (TravelerQuestions tq : batchQuestions) {
+                    questionsMap.put(tq.getRecordId(), tq);
+                }
             }
 
             // Fetch Dependent Questions (for deep tree)
@@ -185,10 +193,14 @@ public class TravelerService {
                     .collect(Collectors.toList());
 
             if (!allDependentIds.isEmpty()) {
-                dependentQuestionsMap = travelerQuestionsRepository
-                        .findAllByRecordIdInAndRecordType(allDependentIds, "dependent")
-                        .stream()
-                        .collect(Collectors.toMap(TravelerQuestions::getRecordId, tq -> tq));
+                for (int i = 0; i < allDependentIds.size(); i += batchSize) {
+                    List<Long> batchResultIds = allDependentIds.subList(i,
+                            Math.min(i + batchSize, allDependentIds.size()));
+
+                    travelerQuestionsRepository
+                            .findAllByRecordIdInAndRecordType(batchResultIds, "dependent")
+                            .forEach(tq -> dependentQuestionsMap.put(tq.getRecordId(), tq));
+                }
             }
         }
 
@@ -198,6 +210,7 @@ public class TravelerService {
         // 4. In-Memory Stitching
         List<TravelerDto> dtos = travelers.stream()
                 .map(t -> {
+
                     List<Dependent> myDependents = finalDependentsMap.getOrDefault(t.getId(),
                             new java.util.ArrayList<>());
                     return mapToDtoOptimized(t, myDependents, questionsMap.get(t.getId()), finalDependentQuestionsMap);
@@ -680,7 +693,6 @@ public class TravelerService {
 
     private TravelerDto mapToDtoOptimized(Traveler t, List<Dependent> dependents, TravelerQuestions questions,
             Map<Long, TravelerQuestions> dependentQuestionsMap) {
-        DateTimeFormatter displayFormat = DateTimeFormatter.ofPattern("dd/MM/yy HH:mm");
 
         TravelerDto.InvoiceDto savedInvoice = null;
         if (Boolean.TRUE.equals(t.getInvoiceGenerated())) {
@@ -853,7 +865,7 @@ public class TravelerService {
         // Check if details are verified based on notes
         boolean detailsVerified = t.getNotes() != null && t.getNotes().contains("VERIFIED");
 
-        return TravelerDto.builder().id(t.getId()).name(t.getName()).firstName(t.getFirstName())
+        return TravelerDto.builder().id(t.getId()).invoiceNumber(t.getInvoiceNumber()).name(t.getName()).firstName(t.getFirstName())
                 .lastName(t.getLastName()).detailsVerified(detailsVerified).title(t.getTitle()).gender(t.getGender())
                 .dob(t.getDob()).placeOfBirth(t.getPlaceOfBirth()).countryOfBirth(t.getCountryOfBirth())
                 .nationality(t.getNationality()).email(t.getEmail()).contactNumber(t.getContactNumber())
@@ -910,14 +922,13 @@ public class TravelerService {
                 .discountValue(t.getDiscountValue()).refundAmount(t.getRefundAmount()).progressPercentage(progress)
                 .savedInvoice(savedInvoice).createdByUsername(t.getCreatedByUsername())
                 .lastUpdatedByUsername(t.getLastUpdatedByUsername())
-                .createdAtFormatted(t.getCreatedAt() != null ? t.getCreatedAt().format(displayFormat) : null)
+                .createdAtFormatted(t.getCreatedAt() != null ? t.getCreatedAt().format(DISPLAY_FORMAT) : null)
                 .lastUpdatedAtFormatted(
-                        t.getLastUpdatedAt() != null ? t.getLastUpdatedAt().format(displayFormat) : null)
+                        t.getLastUpdatedAt() != null ? t.getLastUpdatedAt().format(DISPLAY_FORMAT) : null)
                 .createdAt(t.getCreatedAt()).lastUpdatedAt(t.getLastUpdatedAt()).dependents(depDtos).build();
     }
 
     private DependentDto mapDependentToDto(Dependent d, TravelerQuestions questions) {
-        DateTimeFormatter displayFormat = DateTimeFormatter.ofPattern("dd/MM/yy HH:mm");
 
         return DependentDto.builder()
                 .id(d.getId())
@@ -970,16 +981,16 @@ public class TravelerService {
                 .price(d.getPrice())
                 .createdByUsername(d.getCreatedByUsername())
                 .lastUpdatedByUsername(d.getLastUpdatedByUsername())
-                .createdAtFormatted(d.getCreatedAt() != null ? d.getCreatedAt().format(displayFormat) : null)
+                .createdAtFormatted(d.getCreatedAt() != null ? d.getCreatedAt().format(DISPLAY_FORMAT) : null)
                 .lastUpdatedAtFormatted(
-                        d.getLastUpdatedAt() != null ? d.getLastUpdatedAt().format(displayFormat) : null)
+                        d.getLastUpdatedAt() != null ? d.getLastUpdatedAt().format(DISPLAY_FORMAT) : null)
                 .createdAt(d.getCreatedAt())
                 .lastUpdatedAt(d.getLastUpdatedAt())
                 .build();
     }
 
     private List<String> generateFileLinks(String jsonFiles, String token) {
-        if (jsonFiles == null || jsonFiles.isEmpty() || token == null) {
+        if (jsonFiles == null || jsonFiles.isEmpty() || token == null || jsonFiles.equals("[]")) {
             return Collections.emptyList();
         }
         try {

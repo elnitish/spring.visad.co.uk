@@ -21,50 +21,92 @@ import java.util.List;
 public class TravelerDto {
 
     private Long id;
+    
+    // Virtual field for frontend compatibility
+    @JsonProperty("invoice_number")
+    private String invoiceNumber;
 
     // Personal Information
     private String name;
+
+    @JsonProperty("first_name")
     private String firstName;
+    
+    @JsonProperty("last_name")
     private String lastName;
+    
     private String title;
     private String gender;
 
     @JsonFormat(pattern = "dd/MM/yyyy")
     private LocalDate dob;
-
+    
+    @JsonProperty("place_of_birth")
     private String placeOfBirth;
+    
+    @JsonProperty("country_of_birth")
     private String countryOfBirth;
+    
     private String nationality;
 
     // Contact Information
     private String email;
+    
+    @JsonProperty("contact_number")
     private String contactNumber;
+    
+    @JsonProperty("whatsapp_contact")
     private String whatsappContact;
 
     // Address
+    @JsonProperty("address_line_1")
     private String addressLine1;
+
+    @JsonProperty("address_line_2")
     private String addressLine2;
+
     private String city;
+
+    @JsonProperty("state_province")
     private String stateProvince;
+
+    @JsonProperty("zip_code")
     private String zipCode;
+
     private String country;
 
     // Passport Information
+    @JsonProperty("passport_no")
     private String passportNo;
 
     @JsonFormat(pattern = "dd/MM/yyyy")
+    @JsonProperty("passport_issue")
     private LocalDate passportIssue;
 
     @JsonFormat(pattern = "dd/MM/yyyy")
+    @JsonProperty("passport_expire")
     private LocalDate passportExpire;
 
     // Visa Information
+    @JsonProperty("visa_country")
     private String travelCountry;
+
+    @JsonProperty("visa_center")
     private String visaCenter;
+
+    @JsonProperty("visa_type")
     private String visaType;
+
+    @JsonProperty("visa_link")
     private String visaLink;
-    private String applicationFormLink;
+    
+    @JsonProperty("application_form_link")
+    private String applicationFormLink; // Note: Frontend might use snake_case
+    
+    @JsonProperty("application_form_username")
     private String applicationFormUsername;
+    
+    @JsonProperty("application_form_password")
     private String applicationFormPassword;
 
     @JsonProperty("package")
@@ -73,6 +115,7 @@ public class TravelerDto {
     // Status and Priority
     private String status;
     private String priority;
+    @JsonProperty("payment_status")
     private String paymentStatus;
 
     @JsonProperty("details_verified")
@@ -239,7 +282,12 @@ public class TravelerDto {
     @JsonFormat(pattern = "dd/MM/yy HH:mm")
     private String lastUpdatedAtFormatted;
 
+    @JsonProperty("created_at")
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
     private LocalDateTime createdAt;
+    
+    @JsonProperty("last_updated_at")
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
     private LocalDateTime lastUpdatedAt;
 
     // Dependents

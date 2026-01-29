@@ -26,13 +26,12 @@ spring:
   jpa:
     hibernate:
       ddl-auto: validate  # Use 'update' for development, 'validate' for production
-    show-sql: false
+    show-sql: true
     properties:
       hibernate:
         dialect: org.hibernate.dialect.MySQLDialect
-        format_sql: true
-        jdbc:
-          time_zone: UTC
+        format_sql: false
+        generate_statistics: true
 
   # File Upload Configuration
   servlet:
@@ -88,12 +87,12 @@ app:
 # Logging Configuration
 logging:
   level:
-    root: DEBUG
+    root: INFO
     uk.co.visad: INFO
-    org.springframework.security: DEBUG
-    org.springframework.web: DEBUG
-    org.hibernate.SQL: WARN
-    org.hibernate.type.descriptor.sql.BasicBinder: WARN
+    org.springframework.security: INFO
+    org.springframework.web: INFO
+    org.hibernate.SQL: DEBUG
+    org.hibernate.stat: DEBUG
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
 
